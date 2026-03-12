@@ -280,3 +280,9 @@ export async function bankScore(gameId: number): Promise<GameStateResponse> {
     method: "POST",
   });
 }
+
+export async function forfeitGame(gameId: number): Promise<GameStateResponse> {
+  return request<GameStateResponse>(`/api/v1/games/${gameId}/forfeit`, {
+    method: "POST",
+  });
+}

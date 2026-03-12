@@ -41,8 +41,8 @@ export function GameOverDialog({ game, open, winnerSeat, forfeit }: GameOverDial
           <DialogDescription className="text-center text-base pt-2">
             {forfeit ? (
               isWinner
-                ? "Your opponent forfeited due to timeout."
-                : "You forfeited due to timeout."
+                ? "Your opponent has surrendered."
+                : "You forfeited the game."
             ) : (
               <>
                 {"You: " + myScore.toLocaleString() + " — Opponent: " + oppScore.toLocaleString()}

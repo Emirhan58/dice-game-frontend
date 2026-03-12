@@ -159,5 +159,5 @@ export interface FinishedPayload {
 
 export interface ForfeitPayload {
   winnerSeat: number;
-  reason: "TIMEOUT";
+  reason: "TIMEOUT" | "VOLUNTARY";
 }

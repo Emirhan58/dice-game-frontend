@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getGameState, rollDice, keepDice, bankScore, ApiError } from "@/lib/api";
+import { getGameState, rollDice, keepDice, bankScore, forfeitGame, ApiError } from "@/lib/api";
 import { connectToGame, type GameConnection } from "@/lib/websocket";
 import { queryKeys } from "@/lib/query-keys";
 import { useGameUIStore } from "@/stores/game-ui-store";
@@ -71,7 +70,6 @@ async function fetchBustDice(gameId: number): Promise<import("@/types/api").Roll
 }
 
 export function GameBoard({ gameId }: GameBoardProps) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const selectedSlots = useGameUIStore((s) => s.selectedSlots);
   const clearSelection = useGameUIStore((s) => s.clearSelection);
@@ -125,10 +123,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
     const mySeat = game.mySeat;
     const isMyTurn = game.activeSeat === mySeat;
 
-    if (isMyTurn) {
-      setOpponentSlots([]);
-      return;
-    }
+    if (isMyTurn) return;
 
     const interval = setInterval(async () => {
       const slots = await fetchOpponentSelections(gameId, mySeat);
@@ -239,15 +234,20 @@ export function GameBoard({ gameId }: GameBoardProps) {
     };
   }, [gameId, handleEvent, handleWsConnectionChange, handleOpponentSelection]);
 
+  // Track active game in localStorage
   useEffect(() => {
     if (!game) return;
     if (game.status === "IN_PROGRESS") {
       addActiveGame(gameId);
     } else if (game.status === "FINISHED") {
       removeActiveGame(gameId);
-      if (!gameOver) setGameOver(true);
     }
-  }, [game, gameId, gameOver]);
+  }, [game, gameId]);
+
+  // Detect game finished from polling (when WS event was missed)
+  if (game && game.status === "FINISHED" && !gameOver) {
+    setGameOver(true);
+  }
 
   // Polling-based bust detection: detect opponent bust when WS is unavailable
   useEffect(() => {
@@ -335,10 +335,30 @@ export function GameBoard({ gameId }: GameBoardProps) {
     },
   });
 
+  const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
+
+  const forfeitMutation = useMutation({
+    mutationFn: () => forfeitGame(gameId),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.gameState(gameId), data);
+      removeActiveGame(gameId);
+      setWinnerSeat(data.mySeat === 0 ? 1 : 0);
+      setForfeit(true);
+      setGameOver(true);
+      setShowForfeitConfirm(false);
+    },
+    onError: (err: Error) => {
+      toast.error(err instanceof ApiError ? err.message : "Failed to forfeit");
+      setShowForfeitConfirm(false);
+    },
+  });
+
   // Auto-roll: when it becomes my turn and phase is MUST_ROLL, roll automatically
   const autoRolledRef = useRef(false);
   const rollMutateRef = useRef(rollMutation.mutate);
-  rollMutateRef.current = rollMutation.mutate;
+  useEffect(() => {
+    rollMutateRef.current = rollMutation.mutate;
+  });
   const rollPending = rollMutation.isPending;
 
   useEffect(() => {
@@ -453,15 +473,34 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
       {/* Give Up — bottom right */}
       <div className="absolute bottom-3 right-3 z-30">
-        <button
-          onClick={() => router.push("/lobby")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-white/50 hover:text-white/80 hover:bg-black/70 transition-all text-xs font-mono"
-        >
-          Give up
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-        </button>
+        {!showForfeitConfirm ? (
+          <button
+            onClick={() => setShowForfeitConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 border border-white/10 text-white/50 hover:text-white/80 hover:bg-black/70 transition-all text-xs font-mono"
+          >
+            Give up
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 border border-red-900/40">
+            <span className="text-xs text-red-300/80 font-mono">Forfeit?</span>
+            <button
+              onClick={() => forfeitMutation.mutate()}
+              disabled={forfeitMutation.isPending}
+              className="text-xs px-3 py-1 rounded bg-red-900/60 border border-red-700/40 text-red-200 font-bold hover:bg-red-800/60 transition-all disabled:opacity-50"
+            >
+              {forfeitMutation.isPending ? "..." : "Yes"}
+            </button>
+            <button
+              onClick={() => setShowForfeitConfirm(false)}
+              className="text-xs px-3 py-1 rounded bg-black/50 border border-white/10 text-white/50 hover:text-white/80 transition-all"
+            >
+              No
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Game ID — top right */}
