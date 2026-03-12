@@ -7,7 +7,7 @@ import { logout } from "@/lib/api";
 import { useEffect } from "react";
 
 export function Navbar() {
-  const { isAuthenticated, clearAuth, hydrate } = useAuthStore();
+  const { isAuthenticated, role, clearAuth, hydrate } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -34,6 +34,14 @@ export function Navbar() {
         <nav className="flex items-center gap-3">
           {isAuthenticated ? (
             <>
+              {role === "ADMIN" && (
+                <Link
+                  href="/admin"
+                  className="text-sm text-red-300/70 hover:text-red-300 transition-colors px-2 py-1"
+                >
+                  Admin
+                </Link>
+              )}
               <Link
                 href="/lobby"
                 className="text-sm text-amber-200/70 hover:text-amber-200 transition-colors px-2 py-1"

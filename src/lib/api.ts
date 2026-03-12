@@ -10,6 +10,12 @@ import type {
   TableResponse,
   KeepRequest,
   GameStateResponse,
+  AdminUserResponse,
+  AdminCreateUserRequest,
+  AdminUpdateUserRequest,
+  AdminWalletAdjustRequest,
+  AdminWalletSetRequest,
+  PageResponse,
 } from "@/types/api";
 
 // Empty string = same origin (requests go through Next.js rewrites proxy)
@@ -284,5 +290,63 @@ export async function bankScore(gameId: number): Promise<GameStateResponse> {
 export async function forfeitGame(gameId: number): Promise<GameStateResponse> {
   return request<GameStateResponse>(`/api/v1/games/${gameId}/forfeit`, {
     method: "POST",
+  });
+}
+
+// ============================================================
+// Admin — Users
+// ============================================================
+
+export async function getAdminUsers(
+  page = 0,
+  size = 20,
+  search?: string
+): Promise<PageResponse<AdminUserResponse>> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (search) params.set("search", search);
+  return request<PageResponse<AdminUserResponse>>(`/api/v1/admin/users?${params}`);
+}
+
+export async function getAdminUser(id: number): Promise<AdminUserResponse> {
+  return request<AdminUserResponse>(`/api/v1/admin/users/${id}`);
+}
+
+export async function createAdminUser(data: AdminCreateUserRequest): Promise<AdminUserResponse> {
+  return request<AdminUserResponse>("/api/v1/admin/users", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAdminUser(id: number, data: AdminUpdateUserRequest): Promise<AdminUserResponse> {
+  return request<AdminUserResponse>(`/api/v1/admin/users/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAdminUser(id: number): Promise<void> {
+  return request<void>(`/api/v1/admin/users/${id}`, { method: "DELETE" });
+}
+
+// ============================================================
+// Admin — Wallet
+// ============================================================
+
+export async function getAdminUserWallet(id: number): Promise<WalletResponse> {
+  return request<WalletResponse>(`/api/v1/admin/users/${id}/wallet`);
+}
+
+export async function adjustAdminUserWallet(id: number, data: AdminWalletAdjustRequest): Promise<WalletResponse> {
+  return request<WalletResponse>(`/api/v1/admin/users/${id}/wallet/adjust`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function setAdminUserWallet(id: number, data: AdminWalletSetRequest): Promise<WalletResponse> {
+  return request<WalletResponse>(`/api/v1/admin/users/${id}/wallet`, {
+    method: "PUT",
+    body: JSON.stringify(data),
   });
 }

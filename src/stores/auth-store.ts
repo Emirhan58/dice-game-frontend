@@ -9,7 +9,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   }
 }
 
-function extractUserInfo(token: string): { userId: number | null; username: string | null } {
+function extractUserInfo(token: string): { userId: number | null; username: string | null; role: string | null } {
   const payload = decodeJwtPayload(token);
   const userId = typeof payload.userId === "number" ? payload.userId
     : typeof payload.sub === "number" ? payload.sub
@@ -20,7 +20,8 @@ function extractUserInfo(token: string): { userId: number | null; username: stri
     : typeof payload.preferred_username === "string" ? payload.preferred_username
     : typeof payload.sub === "string" && !/^\d+$/.test(payload.sub) ? payload.sub
     : null;
-  return { userId, username };
+  const role = typeof payload.role === "string" ? payload.role : null;
+  return { userId, username, role };
 }
 
 interface AuthState {
@@ -28,6 +29,7 @@ interface AuthState {
   isAuthenticated: boolean;
   userId: number | null;
   username: string | null;
+  role: string | null;
   setAccessToken: (token: string) => void;
   setUserId: (id: number) => void;
   clearAuth: () => void;
@@ -39,21 +41,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   userId: null,
   username: null,
+  role: null,
   setAccessToken: (token: string) => {
     localStorage.setItem("accessToken", token);
-    const { userId, username } = extractUserInfo(token);
-    // If JWT has username, persist it. Otherwise keep what's in localStorage.
+    const { userId, username, role } = extractUserInfo(token);
     if (username) {
       localStorage.setItem("username", username);
     }
     if (userId !== null) {
       localStorage.setItem("userId", String(userId));
     }
+    if (role) {
+      localStorage.setItem("role", role);
+    }
     set({
       accessToken: token,
       isAuthenticated: true,
       userId: userId ?? (Number(localStorage.getItem("userId")) || null),
       username: username ?? localStorage.getItem("username"),
+      role: role ?? localStorage.getItem("role"),
     });
   },
   setUserId: (id: number) => {
@@ -64,17 +70,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem("accessToken");
     localStorage.removeItem("username");
     localStorage.removeItem("userId");
-    set({ accessToken: null, isAuthenticated: false, userId: null, username: null });
+    localStorage.removeItem("role");
+    set({ accessToken: null, isAuthenticated: false, userId: null, username: null, role: null });
   },
   hydrate: () => {
     const token = localStorage.getItem("accessToken");
     if (token) {
-      const { userId, username } = extractUserInfo(token);
+      const { userId, username, role } = extractUserInfo(token);
       set({
         accessToken: token,
         isAuthenticated: true,
         userId: userId ?? (Number(localStorage.getItem("userId")) || null),
         username: username ?? localStorage.getItem("username"),
+        role: role ?? localStorage.getItem("role"),
       });
     }
   },

@@ -161,3 +161,63 @@ export interface ForfeitPayload {
   winnerSeat: number;
   reason: "TIMEOUT" | "VOLUNTARY";
 }
+
+// ============================================================
+// Admin
+// ============================================================
+
+export type UserRole = "USER" | "ADMIN";
+
+export interface AdminUserResponse {
+  id: number;
+  username: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  bio: string | null;
+  profileImage: string | null;
+  role: UserRole;
+  active: boolean;
+  balanceGold: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminCreateUserRequest {
+  username: string;
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+  initialBalance?: number;
+}
+
+export interface AdminUpdateUserRequest {
+  username?: string;
+  email?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  role?: UserRole;
+}
+
+export interface AdminWalletAdjustRequest {
+  amount: number;
+  note?: string;
+}
+
+export interface AdminWalletSetRequest {
+  amount: number;
+  note?: string;
+}
+
+export interface PageResponse<T> {
+  content: T[];
+  page: {
+    size: number;
+    number: number; // current page (0-based)
+    totalElements: number;
+    totalPages: number;
+  };
+}
