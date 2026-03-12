@@ -5,19 +5,36 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/stores/auth-store";
 import Link from "next/link";
 
+// Check auth before first render to avoid flash
+function useHydratedAuth() {
+  const store = useAuthStore();
+  if (!store.isAuthenticated && typeof window !== "undefined") {
+    const token = localStorage.getItem("accessToken");
+    if (token) {
+      store.hydrate();
+    }
+  }
+  return store;
+}
+
 export default function Home() {
   const router = useRouter();
-  const { hydrate, isAuthenticated } = useAuthStore();
-
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+  const { isAuthenticated } = useHydratedAuth();
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.push("/lobby");
+      router.replace("/lobby");
     }
   }, [isAuthenticated, router]);
+
+  // Don't flash landing page for authenticated users
+  if (isAuthenticated) {
+    return (
+      <div className="medieval-bg fixed inset-0 flex items-center justify-center z-40">
+        <div className="animate-spin h-8 w-8 border-4 border-amber-600 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="medieval-bg fixed inset-0 flex flex-col items-center justify-center text-center gap-8 px-4 z-40">
