@@ -29,6 +29,7 @@ interface AuthState {
   userId: number | null;
   username: string | null;
   setAccessToken: (token: string) => void;
+  setUserId: (id: number) => void;
   clearAuth: () => void;
   hydrate: () => void;
 }
@@ -54,6 +55,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       userId: userId ?? (Number(localStorage.getItem("userId")) || null),
       username: username ?? localStorage.getItem("username"),
     });
+  },
+  setUserId: (id: number) => {
+    localStorage.setItem("userId", String(id));
+    set({ userId: id });
   },
   clearAuth: () => {
     localStorage.removeItem("accessToken");

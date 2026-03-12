@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getWaitingTables, joinTable, ApiError } from "@/lib/api";
@@ -10,7 +10,7 @@ import { AuthGuard } from "@/components/auth-guard";
 import { WalletBadge } from "@/components/lobby/wallet-badge";
 import { TableList } from "@/components/lobby/table-list";
 import { CreateTableDialog } from "@/components/lobby/create-table-dialog";
-import { ActiveGames } from "@/components/lobby/active-games";
+import { MyTables } from "@/components/lobby/active-games";
 import { addActiveGame } from "@/lib/active-games";
 import { toast } from "sonner";
 
@@ -25,6 +25,13 @@ function LobbyContent() {
     queryFn: getWaitingTables,
     refetchInterval: 5000,
   });
+
+  // Split tables into mine (waiting) and others
+  const { myWaitingTables, otherTables } = useMemo(() => {
+    const mine = tables.filter((t) => t.seat0UserId === userId);
+    const others = tables.filter((t) => t.seat0UserId !== userId);
+    return { myWaitingTables: mine, otherTables: others };
+  }, [tables, userId]);
 
   const handleTableCreated = (tableId: number) => {
     router.push(`/lobby/waiting/${tableId}`);
@@ -67,19 +74,23 @@ function LobbyContent() {
         </div>
       </div>
 
-      <ActiveGames />
+      {/* Your tables: waiting + active games */}
+      <MyTables myWaitingTables={myWaitingTables} />
 
-      {/* Table list */}
-      {isLoading ? (
-        <div className="text-center py-12 text-amber-200/30 text-sm">Loading tables...</div>
-      ) : (
-        <TableList
-          tables={tables}
-          currentUserId={userId}
-          onJoin={handleJoin}
-          joiningId={joiningId}
-        />
-      )}
+      {/* Other players' tables */}
+      <div>
+        <h2 className="font-medieval text-sm font-bold text-amber-400/60 tracking-wide mb-2">Available Tables</h2>
+        {isLoading ? (
+          <div className="text-center py-12 text-amber-200/30 text-sm">Loading tables...</div>
+        ) : (
+          <TableList
+            tables={otherTables}
+            currentUserId={userId}
+            onJoin={handleJoin}
+            joiningId={joiningId}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -12,57 +12,37 @@ function WaitingContent() {
   const router = useRouter();
   const tableId = Number(params.tableId);
   const [status, setStatus] = useState<"waiting" | "searching" | "found">("waiting");
-  const [tableSeenInList, setTableSeenInList] = useState(false);
   const searchingRef = useRef(false);
   const [cancelling, setCancelling] = useState(false);
 
-  // Poll waiting tables to detect when opponent joins
-  useEffect(() => {
-    if (status !== "waiting") return;
-
-    const interval = setInterval(async () => {
-      try {
-        const tables = await getWaitingTables();
-        const ourTable = tables.find((t) => t.id === tableId);
-
-        if (ourTable) {
-          // Table still waiting — mark as seen
-          if (!tableSeenInList) setTableSeenInList(true);
-        } else if (tableSeenInList) {
-          // Table disappeared from list — opponent joined!
-          clearInterval(interval);
-          setStatus("searching");
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [tableId, status, tableSeenInList]);
-
-  // Search for the game once opponent joins
+  // Search for the game by scanning game IDs for matching tableId
   const findGame = useCallback(async () => {
     if (searchingRef.current) return;
     searchingRef.current = true;
 
-    let consecutiveNotFound = 0;
-    for (let candidateId = 1; consecutiveNotFound < 5; candidateId++) {
-      try {
-        const game = await getGameState(candidateId);
-        consecutiveNotFound = 0;
-        if (game.tableId === tableId) {
-          setStatus("found");
-          addActiveGame(game.gameId);
-          router.push(`/game/${game.gameId}`);
-          return;
-        }
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 400) {
-          consecutiveNotFound++;
-        } else {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let consecutiveNotFound = 0;
+      for (let candidateId = 1; consecutiveNotFound < 5; candidateId++) {
+        try {
+          const game = await getGameState(candidateId);
           consecutiveNotFound = 0;
+          if (game.tableId === tableId) {
+            setStatus("found");
+            addActiveGame(game.gameId);
+            router.push(`/game/${game.gameId}`);
+            return;
+          }
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 400) {
+            consecutiveNotFound++;
+          } else {
+            consecutiveNotFound = 0;
+          }
         }
+      }
+
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
@@ -70,11 +50,28 @@ function WaitingContent() {
     router.push("/lobby");
   }, [tableId, router]);
 
+  // Poll waiting tables to detect when opponent joins, then search for game
   useEffect(() => {
-    if (status === "searching") {
-      findGame();
-    }
-  }, [status, findGame]);
+    if (status !== "waiting") return;
+
+    const check = async () => {
+      try {
+        const tables = await getWaitingTables();
+        const ourTable = tables.find((t) => t.id === tableId);
+
+        if (!ourTable) {
+          setStatus("searching");
+          findGame();
+        }
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 2000);
+    return () => clearInterval(interval);
+  }, [tableId, status, findGame]);
 
   const handleCancel = async () => {
     setCancelling(true);

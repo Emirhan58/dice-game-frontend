@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createTable, ApiError } from "@/lib/api";
 import type { TableMode, BadgeTier } from "@/types/api";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/stores/auth-store";
 import {
   Dialog,
   DialogContent,
@@ -26,10 +27,15 @@ export function CreateTableDialog({ onTableCreated }: CreateTableDialogProps) {
   const [badgeTier, setBadgeTier] = useState<BadgeTier>("TIN");
   const [stakeGold, setStakeGold] = useState<number>(5);
   const queryClient = useQueryClient();
+  const setUserId = useAuthStore((s) => s.setUserId);
 
   const mutation = useMutation({
     mutationFn: createTable,
     onSuccess: (data) => {
+      // Save our userId from the response (seat0 = creator)
+      if (data.seat0UserId) {
+        setUserId(data.seat0UserId);
+      }
       queryClient.invalidateQueries({ queryKey: queryKeys.waitingTables });
       queryClient.invalidateQueries({ queryKey: queryKeys.wallet });
       toast.success("Table created! Waiting for opponent...");
