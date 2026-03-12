@@ -2,22 +2,19 @@
  * Farkle / KCD2 dice scoring rules.
  *
  * Scoring combinations:
- *   Single 1      = 100
- *   Single 5      = 50
- *   Three 1s      = 1000
- *   Three 2s      = 200
- *   Three 3s      = 300
- *   Three 4s      = 400
- *   Three 5s      = 500
- *   Three 6s      = 600
- *   Four of a kind = 2 × three-of-a-kind
- *   Five of a kind = 4 × three-of-a-kind
- *   Six of a kind  = 8 × three-of-a-kind
- *   1-2-3-4-5-6 straight = 1500
- *   Three pairs    = 750
+ *   Single 1            = 100
+ *   Single 5            = 50
+ *   Three 1s            = 1000
+ *   Three Ns (N≠1)      = N × 100
+ *   Four of a kind      = 2 × three-of-a-kind
+ *   Five of a kind      = 4 × three-of-a-kind
+ *   Six of a kind       = 8 × three-of-a-kind
+ *   1-2-3-4-5-6 straight = 3000
+ *   Three pairs         = 1500
+ *   Two triples         = 2500
  *
  * A die is "scoring" if it participates in at least one scoring combination
- * among the currently rolled (unkepted) dice.
+ * among the currently rolled (unkept) dice.
  */
 
 interface DieInfo {
@@ -45,6 +42,15 @@ export function getScoringSlots(dice: DieInfo[]): Set<number> {
   if (dice.length === 6 && counts.size === 6) {
     for (const die of dice) scoring.add(die.slot);
     return scoring;
+  }
+
+  // Check two triples (e.g. three 2s + three 5s)
+  if (dice.length === 6) {
+    const tripleCount = [...counts.values()].filter((g) => g.length === 3).length;
+    if (tripleCount === 2) {
+      for (const die of dice) scoring.add(die.slot);
+      return scoring;
+    }
   }
 
   // Check three pairs
@@ -85,12 +91,18 @@ export function calculateSelectionScore(dice: DieInfo[]): number {
   }
 
   // Straight (1-2-3-4-5-6)
-  if (dice.length === 6 && counts.size === 6) return 1500;
+  if (dice.length === 6 && counts.size === 6) return 3000;
+
+  // Two triples
+  if (dice.length === 6) {
+    const tripleCount = [...counts.values()].filter((c) => c === 3).length;
+    if (tripleCount === 2) return 2500;
+  }
 
   // Three pairs
   if (dice.length === 6) {
     const pairCount = [...counts.values()].filter((c) => c === 2).length;
-    if (pairCount === 3) return 750;
+    if (pairCount === 3) return 1500;
   }
 
   let score = 0;
