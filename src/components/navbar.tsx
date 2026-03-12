@@ -28,7 +28,7 @@ export function Navbar() {
     <header className="bg-[#1a0f08]/95 backdrop-blur border-b border-amber-900/30 shadow-[0_2px_12px_rgba(0,0,0,0.5)]">
       <div className="container mx-auto flex h-14 items-center justify-between px-4">
         <Link href="/" className="font-medieval text-xl font-bold text-amber-400 hover:text-amber-300 transition-colors tracking-wide drop-shadow-[0_0_8px_rgba(200,146,44,0.3)]">
-          KCD2 Dice
+          Rolling Dice
         </Link>
 
         <nav className="flex items-center gap-3">

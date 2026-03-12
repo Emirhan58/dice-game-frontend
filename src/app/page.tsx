@@ -41,7 +41,7 @@ export default function Home() {
             Rolling Dice
           </h1>
           <p className="text-amber-200/50 text-sm sm:text-base max-w-md mx-auto">
-            A competitive two-player Farkle dice game inspired by Kingdom Come: Deliverance 2
+            A competitive two-player Farkle dice game with 3D dice and real-time multiplayer
           </p>
         </div>
 
@@ -144,7 +144,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-amber-900/15 py-6 text-center">
         <p className="text-[10px] text-amber-200/20">
-          KCD2 Dice Game — Inspired by Kingdom Come: Deliverance 2
+          Rolling Dice — A Farkle game inspired by Kingdom Come: Deliverance 2
         </p>
       </footer>
     </div>

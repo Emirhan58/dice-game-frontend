@@ -17,8 +17,8 @@ const cinzel = Cinzel({
 });
 
 export const metadata: Metadata = {
-  title: "KCD2 Dice Game",
-  description: "Kingdom Come: Deliverance 2 — Competitive Dice Game",
+  title: "Rolling Dice — Farkle",
+  description: "A competitive two-player Farkle dice game with 3D dice and real-time multiplayer",
 };
 
 export default function RootLayout({

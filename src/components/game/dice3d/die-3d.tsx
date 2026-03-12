@@ -40,7 +40,20 @@ function getTargetRotation(value: number): [number, number, number] {
   }
 }
 
+// Deterministic pseudo-random spin for a given slot+trigger
+function computeSpinRotation(slot: number, trigger: number): THREE.Euler {
+  const seed = (slot * 7 + trigger * 13) % 97 / 97;
+  const seed2 = ((slot + 3) * 11 + trigger * 17) % 89 / 89;
+  const seed3 = ((slot + 7) * 5 + trigger * 23) % 83 / 83;
+  return new THREE.Euler(
+    seed * Math.PI * 6 - Math.PI * 3,
+    seed2 * Math.PI * 6 - Math.PI * 3,
+    seed3 * Math.PI * 4 - Math.PI * 2
+  );
+}
+
 interface Die3DProps {
+  slot: number;
   value: number;
   state: "rolling" | "rolled" | "selected" | "kept" | "empty" | "opponent-selected" | "non-scoring";
   position: [number, number, number];
@@ -48,7 +61,7 @@ interface Die3DProps {
   rollTrigger: number; // increment to trigger new roll animation
 }
 
-export function Die3D({ value, state, position, onClick, rollTrigger }: Die3DProps) {
+export function Die3D({ slot, value, state, position, onClick, rollTrigger }: Die3DProps) {
   const meshRef = useRef<THREE.Group>(null);
   const [animPhase, setAnimPhase] = useState<"idle" | "spinning" | "settling">("idle");
   const animProgress = useRef(0);
@@ -61,23 +74,18 @@ export function Die3D({ value, state, position, onClick, rollTrigger }: Die3DPro
     return new THREE.Euler(rx, ry, rz);
   }, [value]);
 
-  // Detect new roll trigger
-  if (rollTrigger !== prevTrigger.current) {
-    prevTrigger.current = rollTrigger;
-    if (state === "rolling" || state === "rolled" || state === "selected" || state === "opponent-selected" || state === "non-scoring") {
-      setAnimPhase("spinning");
-      animProgress.current = 0;
-      // Random spin direction
-      spinRotation.current = new THREE.Euler(
-        Math.random() * Math.PI * 6 - Math.PI * 3,
-        Math.random() * Math.PI * 6 - Math.PI * 3,
-        Math.random() * Math.PI * 4 - Math.PI * 2
-      );
-    }
-  }
-
   useFrame((_, delta) => {
     if (!meshRef.current) return;
+
+    // Detect new roll trigger inside useFrame (refs are safe here)
+    if (rollTrigger !== prevTrigger.current) {
+      prevTrigger.current = rollTrigger;
+      if (state === "rolling" || state === "rolled" || state === "selected" || state === "opponent-selected" || state === "non-scoring") {
+        setAnimPhase("spinning");
+        animProgress.current = 0;
+        spinRotation.current = computeSpinRotation(slot, rollTrigger);
+      }
+    }
 
     if (animPhase === "spinning") {
       animProgress.current += delta * 2.5;
@@ -150,7 +158,7 @@ export function Die3D({ value, state, position, onClick, rollTrigger }: Die3DPro
   const isOpponentSelected = state === "opponent-selected";
   const isNonScoring = state === "non-scoring";
 
-  // Bone/ivory dice colors — KCD2 style
+  // Bone/ivory dice colors — medieval style
   // Non-scoring dice are dimmed/grayed out
   const bodyColor = isNonScoring ? "#7a7568" : isKept ? "#8a7040" : isSelected ? "#e8dcc8" : isOpponentSelected ? "#e8dcc8" : "#ddd4be";
   const emissiveColor = isSelected ? "#4488cc" : isOpponentSelected ? "#cc5522" : isKept ? "#665510" : "#000000";

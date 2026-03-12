@@ -140,6 +140,7 @@ export function DiceScene({
               return (
                 <Die3D
                   key={slot}
+                  slot={slot}
                   value={rolledDie.value}
                   state={dieState}
                   position={pos}
@@ -152,6 +153,7 @@ export function DiceScene({
             return (
               <Die3D
                 key={slot}
+                slot={slot}
                 value={1}
                 state="empty"
                 position={pos}

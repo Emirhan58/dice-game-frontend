@@ -1,5 +1,5 @@
 /**
- * Farkle / KCD2 dice scoring rules.
+ * Farkle dice scoring rules.
  *
  * Scoring combinations:
  *   Single 1            = 100
