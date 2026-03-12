@@ -15,6 +15,26 @@ function WaitingContent() {
   const searchingRef = useRef(false);
   const [cancelling, setCancelling] = useState(false);
 
+  // Presence heartbeat — lets other players know owner is in waiting room
+  useEffect(() => {
+    const heartbeat = () => {
+      fetch("/api/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tableId }),
+      }).catch(() => {});
+    };
+
+    heartbeat(); // immediate
+    const interval = setInterval(heartbeat, 3000);
+
+    return () => {
+      clearInterval(interval);
+      // Signal departure
+      fetch(`/api/presence?tableId=${tableId}`, { method: "DELETE" }).catch(() => {});
+    };
+  }, [tableId]);
+
   // Search for the game by scanning game IDs for matching tableId
   const findGame = useCallback(async () => {
     if (searchingRef.current) return;

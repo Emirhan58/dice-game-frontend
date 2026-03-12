@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { TableResponse } from "@/types/api";
 
 interface TableCardProps {
@@ -16,6 +17,24 @@ const tierStyle: Record<string, { badge: string; icon: string }> = {
 };
 
 export function TableCard({ table, onJoin, isOwner, joining }: TableCardProps) {
+  const [ownerOnline, setOwnerOnline] = useState<boolean | null>(null);
+
+  // Poll owner presence for non-owner users
+  useEffect(() => {
+    if (isOwner) return;
+
+    const check = () => {
+      fetch(`/api/presence?tableId=${table.id}`)
+        .then((r) => r.json())
+        .then((data: { online: boolean }) => setOwnerOnline(data.online))
+        .catch(() => {});
+    };
+
+    check();
+    const interval = setInterval(check, 4000);
+    return () => clearInterval(interval);
+  }, [table.id, isOwner]);
+
   return (
     <div className="p-3 bg-[#2a1a0e]/60 border border-amber-900/25 rounded-lg hover:bg-[#2a1a0e]/80 transition-colors">
       {/* Top row: table name + waiting indicator */}
@@ -24,13 +43,23 @@ export function TableCard({ table, onJoin, isOwner, joining }: TableCardProps) {
           <span className="text-amber-200/80 text-sm font-bold">
             {isOwner ? "Your Table" : `Table #${table.id}`}
           </span>
-          {/* Owner waiting indicator */}
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[10px] text-emerald-400/70">
-              {isOwner ? "You are the host" : "Owner waiting"}
+          {/* Presence indicator */}
+          {isOwner ? (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] text-emerald-400/70">You are the host</span>
             </span>
-          </span>
+          ) : ownerOnline === true ? (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] text-emerald-400/70">Owner waiting</span>
+            </span>
+          ) : ownerOnline === false ? (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500/50" />
+              <span className="text-[10px] text-amber-200/40">Owner away</span>
+            </span>
+          ) : null}
         </div>
 
         {!isOwner && (
