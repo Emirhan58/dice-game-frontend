@@ -285,7 +285,9 @@ function WalletCard({ userId, balance }: { userId: number; balance: number }) {
 
 function DangerZone({ userId, username, active }: { userId: number; username: string; active: boolean }) {
   const router = useRouter();
-  const mutation = useMutation({
+  const queryClient = useQueryClient();
+
+  const deactivateMutation = useMutation({
     mutationFn: () => deleteAdminUser(userId),
     onSuccess: () => {
       toast.success(`User "${username}" deactivated`);
@@ -296,25 +298,53 @@ function DangerZone({ userId, username, active }: { userId: number; username: st
     },
   });
 
-  if (!active) return null;
+  const reactivateMutation = useMutation({
+    mutationFn: () => updateAdminUser(userId, { isActive: true }),
+    onSuccess: () => {
+      toast.success(`User "${username}" reactivated`);
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminUser(userId) });
+    },
+    onError: (err) => {
+      if (err instanceof ApiError) toast.error(err.message);
+    },
+  });
 
   return (
-    <div className="mt-8 bg-red-950/20 border border-red-900/20 rounded-lg p-5">
-      <h2 className="font-medieval text-lg text-red-400 font-bold mb-2">Danger Zone</h2>
-      <p className="text-xs text-red-200/40 mb-4">
-        Deactivating a user performs a soft delete. The user will not be able to log in.
-      </p>
-      <button
-        onClick={() => {
-          if (confirm(`Are you sure you want to deactivate "${username}"?`)) {
-            mutation.mutate();
-          }
-        }}
-        disabled={mutation.isPending}
-        className="px-4 py-2 bg-red-900/40 border border-red-700/30 rounded-lg text-red-200 text-sm hover:bg-red-800/40 transition-all disabled:opacity-50"
-      >
-        {mutation.isPending ? "Deactivating..." : "Deactivate User"}
-      </button>
+    <div className={`mt-8 ${active ? "bg-red-950/20 border-red-900/20" : "bg-emerald-950/20 border-emerald-900/20"} border rounded-lg p-5`}>
+      <h2 className={`font-medieval text-lg font-bold mb-2 ${active ? "text-red-400" : "text-emerald-400"}`}>
+        {active ? "Danger Zone" : "User Inactive"}
+      </h2>
+      {active ? (
+        <>
+          <p className="text-xs text-red-200/40 mb-4">
+            Deactivating a user performs a soft delete. The user will not be able to log in.
+          </p>
+          <button
+            onClick={() => {
+              if (confirm(`Are you sure you want to deactivate "${username}"?`)) {
+                deactivateMutation.mutate();
+              }
+            }}
+            disabled={deactivateMutation.isPending}
+            className="px-4 py-2 bg-red-900/40 border border-red-700/30 rounded-lg text-red-200 text-sm hover:bg-red-800/40 transition-all disabled:opacity-50"
+          >
+            {deactivateMutation.isPending ? "Deactivating..." : "Deactivate User"}
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-emerald-200/40 mb-4">
+            This user has been deactivated. Reactivating will restore their access.
+          </p>
+          <button
+            onClick={() => reactivateMutation.mutate()}
+            disabled={reactivateMutation.isPending}
+            className="px-4 py-2 bg-emerald-900/40 border border-emerald-700/30 rounded-lg text-emerald-200 text-sm hover:bg-emerald-800/40 transition-all disabled:opacity-50"
+          >
+            {reactivateMutation.isPending ? "Reactivating..." : "Reactivate User"}
+          </button>
+        </>
+      )}
     </div>
   );
 }

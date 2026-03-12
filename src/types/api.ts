@@ -200,6 +200,7 @@ export interface AdminUpdateUserRequest {
   firstName?: string;
   lastName?: string;
   role?: UserRole;
+  isActive?: boolean;
 }
 
 export interface AdminWalletAdjustRequest {
