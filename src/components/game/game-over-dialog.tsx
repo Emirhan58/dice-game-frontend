@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { GameStateResponse } from "@/types/api";
+import type { GameStateResponse, ForfeitReason } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,9 +17,39 @@ interface GameOverDialogProps {
   open: boolean;
   winnerSeat?: number;
   forfeit?: boolean;
+  forfeitReason?: ForfeitReason;
 }
 
-export function GameOverDialog({ game, open, winnerSeat, forfeit }: GameOverDialogProps) {
+function getForfeitMessage(isWinner: boolean, reason?: ForfeitReason): string {
+  if (isWinner) {
+    switch (reason) {
+      case "VOLUNTARY":
+        return "Your opponent has surrendered.";
+      case "DEACTIVATED":
+        return "Your opponent's account was deactivated.";
+      case "DISCONNECT":
+        return "Your opponent disconnected.";
+      case "TIMEOUT":
+        return "Your opponent ran out of time.";
+      default:
+        return "Your opponent has forfeited.";
+    }
+  }
+  switch (reason) {
+    case "VOLUNTARY":
+      return "You forfeited the game.";
+    case "DEACTIVATED":
+      return "Your account was deactivated.";
+    case "DISCONNECT":
+      return "You were disconnected.";
+    case "TIMEOUT":
+      return "You ran out of time.";
+    default:
+      return "You forfeited the game.";
+  }
+}
+
+export function GameOverDialog({ game, open, winnerSeat, forfeit, forfeitReason }: GameOverDialogProps) {
   const router = useRouter();
 
   const winner = winnerSeat ?? (game.totalScores[0] >= game.targetScore ? 0 : 1);
@@ -40,9 +70,7 @@ export function GameOverDialog({ game, open, winnerSeat, forfeit }: GameOverDial
           </DialogTitle>
           <DialogDescription className="text-center text-base pt-2">
             {forfeit ? (
-              isWinner
-                ? "Your opponent has surrendered."
-                : "You forfeited the game."
+              getForfeitMessage(isWinner, forfeitReason)
             ) : (
               <>
                 {"You: " + myScore.toLocaleString() + " — Opponent: " + oppScore.toLocaleString()}

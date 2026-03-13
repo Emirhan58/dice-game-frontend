@@ -110,6 +110,8 @@ export interface GameStateResponse {
   remainingDiceCount: number;
   phase: TurnPhase;
   lastRoll: RolledDieDto[] | null;
+  winnerSeat?: number | null;
+  forfeitReason?: ForfeitReason | null;
 }
 
 // ============================================================
@@ -157,9 +159,12 @@ export interface FinishedPayload {
   winnerSeat: number;
 }
 
+export type ForfeitReason = "VOLUNTARY" | "DEACTIVATED" | "DISCONNECT" | "TIMEOUT";
+
 export interface ForfeitPayload {
   winnerSeat: number;
-  reason: "TIMEOUT" | "VOLUNTARY";
+  loserSeat: number;
+  reason: ForfeitReason;
 }
 
 // ============================================================

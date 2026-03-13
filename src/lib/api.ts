@@ -293,6 +293,15 @@ export async function forfeitGame(gameId: number): Promise<GameStateResponse> {
   });
 }
 
+export async function pingGame(gameId: number): Promise<void> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
+  await fetch(`${BASE_URL}/api/v1/games/${gameId}/ping`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+  });
+}
+
 // ============================================================
 // Admin — Users
 // ============================================================

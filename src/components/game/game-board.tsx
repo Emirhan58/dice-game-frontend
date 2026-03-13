@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getGameState, rollDice, keepDice, bankScore, forfeitGame, ApiError } from "@/lib/api";
+import { getGameState, rollDice, keepDice, bankScore, forfeitGame, pingGame, ApiError } from "@/lib/api";
 import { connectToGame, type GameConnection } from "@/lib/websocket";
 import { queryKeys } from "@/lib/query-keys";
 import { useGameUIStore } from "@/stores/game-ui-store";
@@ -76,6 +76,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
   const [gameOver, setGameOver] = useState(false);
   const [winnerSeat, setWinnerSeat] = useState<number | undefined>();
   const [forfeit, setForfeit] = useState(false);
+  const [forfeitReason, setForfeitReason] = useState<import("@/types/api").ForfeitReason | undefined>();
   const [wsConnected, setWsConnected] = useState(false);
   const [rollTrigger, setRollTrigger] = useState(0);
   const [bustAnimation, setBustAnimation] = useState(false);
@@ -117,6 +118,15 @@ export function GameBoard({ gameId }: GameBoardProps) {
     return () => clearInterval(interval);
   }, [gameId]);
 
+  // Presence ping: notify backend every 10s that this player is still active
+  useEffect(() => {
+    if (gameOver) return;
+    const interval = setInterval(() => {
+      pingGame(gameId).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [gameId, gameOver]);
+
   // Poll opponent selections via HTTP relay (500ms interval)
   useEffect(() => {
     if (!game || gameOver) return;
@@ -135,10 +145,6 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
   const handleWsConnectionChange = useCallback((connected: boolean) => {
     setWsConnected(connected);
-  }, []);
-
-  const handleOpponentSelection = useCallback((slots: number[]) => {
-    setOpponentSlots(slots);
   }, []);
 
   const triggerBust = useCallback((message: string, dice: import("@/types/api").RolledDieDto[] | null) => {
@@ -209,8 +215,15 @@ export function GameBoard({ gameId }: GameBoardProps) {
           break;
         }
         case "FORFEIT": {
-          const payload = event.payload as { winnerSeat: number } | undefined;
-          setWinnerSeat(payload?.winnerSeat);
+          const payload = event.payload as { winnerSeat?: number; loserSeat?: number; reason?: string } | undefined;
+          console.log("[FORFEIT] payload:", payload, "mySeat:", mySeat);
+          if (payload?.winnerSeat != null) {
+            setWinnerSeat(payload.winnerSeat);
+          } else if (payload?.loserSeat != null && mySeat != null) {
+            // fallback: derive winner from loserSeat
+            setWinnerSeat(payload.loserSeat === 0 ? 1 : 0);
+          }
+          setForfeitReason(payload?.reason as import("@/types/api").ForfeitReason | undefined);
           setForfeit(true);
           setGameOver(true);
           break;
@@ -224,15 +237,14 @@ export function GameBoard({ gameId }: GameBoardProps) {
     const conn = connectToGame(
       gameId,
       handleEvent,
-      handleWsConnectionChange,
-      handleOpponentSelection
+      handleWsConnectionChange
     );
     connectionRef.current = conn;
     return () => {
       conn.disconnect();
       connectionRef.current = null;
     };
-  }, [gameId, handleEvent, handleWsConnectionChange, handleOpponentSelection]);
+  }, [gameId, handleEvent, handleWsConnectionChange]);
 
   // Track active game in localStorage
   useEffect(() => {
@@ -246,6 +258,23 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
   // Detect game finished from polling (when WS event was missed)
   if (game && game.status === "FINISHED" && !gameOver) {
+    // Use winnerSeat from game state if backend provides it
+    if (game.winnerSeat != null) {
+      setWinnerSeat(game.winnerSeat);
+    }
+    // Detect forfeit: if neither player reached targetScore, it was a forfeit
+    const noOneReachedTarget = game.totalScores[0] < game.targetScore && game.totalScores[1] < game.targetScore;
+    if (noOneReachedTarget || game.forfeitReason) {
+      setForfeit(true);
+      if (game.forfeitReason) {
+        setForfeitReason(game.forfeitReason);
+      }
+      // If no winnerSeat from backend or WS, the player still viewing the game
+      // is the winner (the loser was deactivated/disconnected/timed out)
+      if (game.winnerSeat == null) {
+        setWinnerSeat(game.mySeat);
+      }
+    }
     setGameOver(true);
   }
 
@@ -337,12 +366,15 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
 
+  const pendingForfeitReason = useRef<import("@/types/api").ForfeitReason>("VOLUNTARY");
+
   const forfeitMutation = useMutation({
     mutationFn: () => forfeitGame(gameId),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.gameState(gameId), data);
       removeActiveGame(gameId);
       setWinnerSeat(data.mySeat === 0 ? 1 : 0);
+      setForfeitReason(pendingForfeitReason.current);
       setForfeit(true);
       setGameOver(true);
       setShowForfeitConfirm(false);
@@ -352,6 +384,16 @@ export function GameBoard({ gameId }: GameBoardProps) {
       setShowForfeitConfirm(false);
     },
   });
+
+  // Turn timeout: forfeit with TIMEOUT reason when timer runs out on my turn
+  const handleTurnTimeout = useCallback(() => {
+    if (!game || gameOver) return;
+    const isMyTurn = game.activeSeat === game.mySeat;
+    if (isMyTurn && !forfeitMutation.isPending) {
+      pendingForfeitReason.current = "TIMEOUT";
+      forfeitMutation.mutate();
+    }
+  }, [game, gameOver, forfeitMutation]);
 
   // Auto-roll: when it becomes my turn and phase is MUST_ROLL, roll automatically
   const autoRolledRef = useRef(false);
@@ -440,7 +482,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
       {/* Dice table + actions — centered, fills available space */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-3xl mx-auto w-full">
         <div className="mb-2">
-          <TurnInfo game={game} />
+          <TurnInfo game={game} gameOver={gameOver} onTimeout={handleTurnTimeout} />
         </div>
 
         <div className="w-full">
@@ -487,7 +529,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 border border-red-900/40">
             <span className="text-xs text-red-300/80 font-mono">Forfeit?</span>
             <button
-              onClick={() => forfeitMutation.mutate()}
+              onClick={() => { pendingForfeitReason.current = "VOLUNTARY"; forfeitMutation.mutate(); }}
               disabled={forfeitMutation.isPending}
               className="text-xs px-3 py-1 rounded bg-red-900/60 border border-red-700/40 text-red-200 font-bold hover:bg-red-800/60 transition-all disabled:opacity-50"
             >
@@ -515,6 +557,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
         open={gameOver}
         winnerSeat={winnerSeat}
         forfeit={forfeit}
+        forfeitReason={forfeitReason}
       />
     </div>
   );
