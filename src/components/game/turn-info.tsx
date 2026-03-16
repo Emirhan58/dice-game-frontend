@@ -22,6 +22,7 @@ export function TurnInfo({ game, gameOver, onTimeout }: TurnInfoProps) {
       <TurnTimer
         gameId={game.gameId}
         activeSeat={game.activeSeat}
+        phase={game.phase}
         gameOver={gameOver}
         onTimeout={onTimeout}
       />

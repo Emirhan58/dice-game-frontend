@@ -2,67 +2,83 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-const TURN_DURATION = 20; // seconds
+const TURN_DURATION = 60; // seconds
 const RADIUS = 16;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 interface TurnTimerProps {
   gameId: number;
   activeSeat: number;
+  phase: string;
   gameOver: boolean;
   onTimeout: () => void;
 }
 
 // External store for remaining time — avoids setState-in-effect and
-// impure-function-during-render lint issues.
+// impure-function-during-render lint issues (React 19 compiler rules).
 let listeners: Array<() => void> = [];
 let remainingSnapshot = TURN_DURATION;
 
 function subscribe(cb: () => void) {
   listeners.push(cb);
-  return () => { listeners = listeners.filter((l) => l !== cb); };
+  return () => {
+    listeners = listeners.filter((l) => l !== cb);
+  };
 }
-function getSnapshot() { return remainingSnapshot; }
+function getSnapshot() {
+  return remainingSnapshot;
+}
 function setSnapshot(value: number) {
   remainingSnapshot = value;
-  listeners.forEach((l) => l());
+  for (const l of listeners) l();
 }
 
-export function TurnTimer({ gameId, activeSeat, gameOver, onTimeout }: TurnTimerProps) {
+export function TurnTimer({
+  gameId,
+  activeSeat,
+  phase,
+  gameOver,
+  onTimeout,
+}: TurnTimerProps) {
   const startRef = useRef(0);
   const timeoutFiredRef = useRef(false);
-  const syncedRef = useRef(false);
 
   const remaining = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // When active seat changes: publish turn start time and reset timer
+  // Reset timer after every roll (phase becomes MUST_KEEP_OR_BUST)
   useEffect(() => {
-    const now = Date.now();
-    startRef.current = now;
+    if (phase !== "MUST_KEEP_OR_BUST") return;
+    startRef.current = Date.now();
     timeoutFiredRef.current = false;
-    syncedRef.current = false;
     setSnapshot(TURN_DURATION);
+  }, [activeSeat, phase]);
 
-    // Publish this turn's start time to the relay
+  // Relay sync: only on turn (activeSeat) change for cross-device sync
+  useEffect(() => {
+    const now = startRef.current || Date.now();
+
+    // Publish this turn's start time
     fetch("/api/turn-start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId, activeSeat, startedAt: now }),
     }).catch(() => {});
 
-    // Also fetch in case the other player already published a start time
+    // Fetch in case the other player published first
     fetch(`/api/turn-start?gameId=${gameId}`)
       .then((res) => res.json())
-      .then((data: { activeSeat: number | null; startedAt: number | null }) => {
-        if (
-          data.startedAt != null &&
-          data.activeSeat === activeSeat &&
-          !syncedRef.current
-        ) {
-          startRef.current = data.startedAt;
-          syncedRef.current = true;
+      .then(
+        (data: { activeSeat: number | null; startedAt: number | null }) => {
+          if (
+            data.startedAt != null &&
+            data.activeSeat === activeSeat &&
+            data.startedAt < startRef.current
+          ) {
+            // Use the earlier start time (the first player to detect the turn change)
+            startRef.current = data.startedAt;
+          }
         }
-      })
+      )
       .catch(() => {});
   }, [gameId, activeSeat]);
 
@@ -74,7 +90,7 @@ export function TurnTimer({ gameId, activeSeat, gameOver, onTimeout }: TurnTimer
       if (startRef.current > 0) {
         const elapsed = (Date.now() - startRef.current) / 1000;
         const left = Math.max(0, TURN_DURATION - elapsed);
-        setSnapshot(left);
+        setSnapshot(Math.round(left * 10) / 10);
 
         if (left <= 0 && !timeoutFiredRef.current) {
           timeoutFiredRef.current = true;
@@ -84,31 +100,24 @@ export function TurnTimer({ gameId, activeSeat, gameOver, onTimeout }: TurnTimer
     }, 100);
 
     return () => clearInterval(interval);
-  }, [activeSeat, gameOver, onTimeout]);
+  }, [activeSeat, phase, gameOver, onTimeout]);
 
   const fraction = remaining / TURN_DURATION;
   const offset = CIRCUMFERENCE * (1 - fraction);
 
-  // Color transitions: green → yellow → orange → red
   const getColor = (f: number) => {
-    if (f > 0.5) return "#22c55e"; // green-500
-    if (f > 0.25) return "#eab308"; // yellow-500
-    if (f > 0.1) return "#f97316"; // orange-500
-    return "#ef4444"; // red-500
+    if (f > 0.5) return "#22c55e";
+    if (f > 0.25) return "#eab308";
+    if (f > 0.1) return "#f97316";
+    return "#ef4444";
   };
 
   const color = getColor(fraction);
-  const secondsLeft = Math.ceil(remaining);
+  const secondsLeft = Math.min(TURN_DURATION, Math.ceil(remaining));
 
   return (
     <div className="relative inline-flex items-center justify-center w-10 h-10">
-      <svg
-        width="40"
-        height="40"
-        viewBox="0 0 40 40"
-        className="-rotate-90"
-      >
-        {/* Background circle */}
+      <svg width="40" height="40" viewBox="0 0 40 40" className="-rotate-90">
         <circle
           cx="20"
           cy="20"
@@ -117,7 +126,6 @@ export function TurnTimer({ gameId, activeSeat, gameOver, onTimeout }: TurnTimer
           stroke="rgba(255,255,255,0.1)"
           strokeWidth="3"
         />
-        {/* Progress arc */}
         <circle
           cx="20"
           cy="20"
@@ -131,7 +139,6 @@ export function TurnTimer({ gameId, activeSeat, gameOver, onTimeout }: TurnTimer
           style={{ transition: "stroke 0.3s ease" }}
         />
       </svg>
-      {/* Seconds text */}
       <span
         className="absolute text-xs font-bold font-mono"
         style={{ color }}
