@@ -395,15 +395,19 @@ export function GameBoard({ gameId }: GameBoardProps) {
     },
   });
 
-  // Turn timeout: forfeit with TIMEOUT reason when timer runs out on my turn
+  // Turn timeout: auto-bank if in CAN_ROLL_OR_BANK phase, otherwise forfeit
   const handleTurnTimeout = useCallback(() => {
     if (!game || gameOver) return;
     const isMyTurn = game.activeSeat === game.mySeat;
-    if (isMyTurn && !forfeitMutation.isPending) {
+    if (!isMyTurn) return;
+
+    if (game.phase === "CAN_ROLL_OR_BANK" && !bankMutation.isPending) {
+      bankMutation.mutate();
+    } else if (!forfeitMutation.isPending) {
       pendingForfeitReason.current = "TIMEOUT";
       forfeitMutation.mutate();
     }
-  }, [game, gameOver, forfeitMutation]);
+  }, [game, gameOver, forfeitMutation, bankMutation]);
 
   // Auto-roll: when it becomes my turn and phase is MUST_ROLL, roll automatically
   const autoRolledRef = useRef(false);

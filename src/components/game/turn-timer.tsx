@@ -45,7 +45,14 @@ export function TurnTimer({
 
   const remaining = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // Reset timer after every roll (phase becomes MUST_KEEP_OR_BUST)
+  // Reset timer on turn change (activeSeat) to prevent instant timeout on new player
+  useEffect(() => {
+    startRef.current = Date.now();
+    timeoutFiredRef.current = false;
+    setSnapshot(TURN_DURATION);
+  }, [activeSeat]);
+
+  // Also reset timer after every roll (phase becomes MUST_KEEP_OR_BUST)
   useEffect(() => {
     if (phase !== "MUST_KEEP_OR_BUST") return;
     startRef.current = Date.now();
