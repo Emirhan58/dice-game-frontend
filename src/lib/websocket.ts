@@ -22,13 +22,16 @@ export function connectToGame(
 
   const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
 
+  let reconnectAttempt = 0;
+
   const client = new Client({
     brokerURL: `${wsUrl}/ws`,
-    reconnectDelay: 5000,
+    reconnectDelay: 2000, // initial delay, overridden by backoff below
     heartbeatIncoming: 10000,
     heartbeatOutgoing: 10000,
     connectHeaders: token ? { Authorization: `Bearer ${token}` } : {},
     onConnect: () => {
+      reconnectAttempt = 0; // reset backoff on successful connection
       console.log(`[WS] Connected to game ${gameId}`);
       onConnectionChange?.(true);
 
@@ -47,7 +50,10 @@ export function connectToGame(
       console.warn("[WS] STOMP error:", frame.headers["message"]);
     },
     onWebSocketError: () => {
-      console.warn("[WS] WebSocket unavailable — falling back to polling");
+      reconnectAttempt++;
+      // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+      client.reconnectDelay = Math.min(2000 * Math.pow(2, reconnectAttempt), 30000);
+      console.warn(`[WS] WebSocket error — reconnecting in ${client.reconnectDelay / 1000}s`);
       onConnectionChange?.(false);
     },
   });
@@ -56,9 +62,9 @@ export function connectToGame(
   stompClient = client;
 
   // Selection publishing is handled entirely via HTTP relay (postSelections).
-  // SEND to /topic/ causes a fatal STOMP ERROR that kills the connection,
-  // so publishSelections is a no-op.
-  const publishSelections = () => {};
+  // SEND to /topic/ causes a fatal STOMP ERROR that kills the connection.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const publishSelections = (_slots: number[]) => {};
 
   const disconnect = () => {
     client.deactivate();

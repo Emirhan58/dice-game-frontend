@@ -16,13 +16,13 @@ interface TurnTimerProps {
 
 // External store for remaining time — avoids setState-in-effect and
 // impure-function-during-render lint issues (React 19 compiler rules).
-let listeners: Array<() => void> = [];
+const listeners = new Set<() => void>();
 let remainingSnapshot = TURN_DURATION;
 
 function subscribe(cb: () => void) {
-  listeners.push(cb);
+  listeners.add(cb);
   return () => {
-    listeners = listeners.filter((l) => l !== cb);
+    listeners.delete(cb);
   };
 }
 function getSnapshot() {

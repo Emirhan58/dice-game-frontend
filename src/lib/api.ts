@@ -20,6 +20,22 @@ import type {
 
 // Empty string = same origin (requests go through Next.js rewrites proxy)
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+const REQUEST_TIMEOUT = 10_000; // 10s
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeout = REQUEST_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "Request timed out. Please check your connection.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ============================================================
 // Helpers
@@ -74,7 +90,7 @@ async function doRefresh(): Promise<string> {
   isRefreshing = true;
 
   try {
-    const res = await fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
@@ -126,7 +142,7 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...options,
     headers,
     credentials: "include",
@@ -139,7 +155,7 @@ async function request<T>(
 
       // Retry the original request with the fresh token
       headers["Authorization"] = `Bearer ${newToken}`;
-      const retryRes = await fetch(url, {
+      const retryRes = await fetchWithTimeout(url, {
         ...options,
         headers,
         credentials: "include",
@@ -295,11 +311,11 @@ export async function forfeitGame(gameId: number): Promise<GameStateResponse> {
 
 export async function pingGame(gameId: number): Promise<void> {
   const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null;
-  await fetch(`${BASE_URL}/api/v1/games/${gameId}/ping`, {
+  await fetchWithTimeout(`${BASE_URL}/api/v1/games/${gameId}/ping`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
-  });
+  }, 5000); // shorter timeout for pings
 }
 
 // ============================================================
