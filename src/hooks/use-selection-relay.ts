@@ -5,9 +5,17 @@ import { useGameUIStore } from "@/stores/game-ui-store";
 import type { GameStateResponse } from "@/types/api";
 // ── Relay helpers ──
 
+const RELAY_TIMEOUT = 3000;
+
+function relayFetch(url: string, options?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function postSelections(gameId: number, seat: number, slots: number[]) {
   try {
-    await fetch("/api/selections", {
+    await relayFetch("/api/selections", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId, seat, slots }),
@@ -19,7 +27,7 @@ async function postSelections(gameId: number, seat: number, slots: number[]) {
 
 async function fetchOpponentSelections(gameId: number, mySeat: number): Promise<number[]> {
   try {
-    const res = await fetch(`/api/selections?gameId=${gameId}&mySeat=${mySeat}`);
+    const res = await relayFetch(`/api/selections?gameId=${gameId}&mySeat=${mySeat}`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.slots ?? [];
@@ -63,7 +71,7 @@ export function useSelectionRelay({ gameId, game, gameOver }: UseSelectionRelayO
     return () => clearInterval(interval);
   }, [gameId, gameOver]);
 
-  // Poll opponent selections via HTTP relay (500ms interval)
+  // Poll opponent selections via HTTP relay (1s interval)
   useEffect(() => {
     if (!game || gameOver) return;
     const mySeat = game.mySeat;
@@ -73,7 +81,7 @@ export function useSelectionRelay({ gameId, game, gameOver }: UseSelectionRelayO
     const interval = setInterval(async () => {
       const slots = await fetchOpponentSelections(gameId, mySeat);
       setOpponentSlots(slots);
-    }, 500);
+    }, 1000);
 
     return () => clearInterval(interval);
   }, [gameId, game, gameOver]);

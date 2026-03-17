@@ -3,14 +3,20 @@
 import { useEffect, useRef } from "react";
 import type { GameStateResponse, RolledDieDto } from "@/types/api";
 
+const RELAY_TIMEOUT = 3000;
+
 async function fetchBustDice(gameId: number): Promise<RolledDieDto[] | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT);
   try {
-    const res = await fetch(`/api/bust-relay?gameId=${gameId}`);
+    const res = await fetch(`/api/bust-relay?gameId=${gameId}`, { signal: controller.signal });
     if (!res.ok) return null;
     const data = await res.json();
     return data.dice ?? null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

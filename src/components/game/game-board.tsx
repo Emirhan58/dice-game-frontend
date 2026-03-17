@@ -27,15 +27,22 @@ interface GameBoardProps {
 
 // ── Bust dice relay (POST only — fetch is in useBustDetection) ──
 
+const RELAY_TIMEOUT = 3000;
+
 async function postBustDice(gameId: number, dice: RolledDieDto[]) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT);
   try {
     await fetch("/api/bust-relay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId, dice }),
+      signal: controller.signal,
     });
   } catch {
     // silent
+  } finally {
+    clearTimeout(timer);
   }
 }
 

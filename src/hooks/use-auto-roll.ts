@@ -11,21 +11,22 @@ interface UseAutoRollOptions {
   rollMutate: () => void;
 }
 
-const AUTO_ROLL_DELAY = 1200; // ms — enough time after bust animation clears
+const NORMAL_DELAY = 800;
+const POST_BUST_DELAY = 1500;
 
 export function useAutoRoll({ game, gameOver, bustAnimation, rollPending, rollMutate }: UseAutoRollOptions) {
   const autoRolledRef = useRef(false);
   const rollMutateRef = useRef(rollMutate);
-  const bustEndTimeRef = useRef(0);
+  const wasBustRef = useRef(false);
 
   useEffect(() => {
     rollMutateRef.current = rollMutate;
   });
 
-  // Track when bust animation ends so auto-roll waits a bit after
+  // Track bust: set flag when bust starts, consumed by auto-roll for extra delay
   useEffect(() => {
-    if (!bustAnimation) {
-      bustEndTimeRef.current = Date.now();
+    if (bustAnimation) {
+      wasBustRef.current = true;
     }
   }, [bustAnimation]);
 
@@ -36,24 +37,22 @@ export function useAutoRoll({ game, gameOver, bustAnimation, rollPending, rollMu
   }, [activeSeat]);
 
   useEffect(() => {
-    if (!game || gameOver) return;
+    if (!game || gameOver || bustAnimation || rollPending) return;
     const isMyTurn = game.activeSeat === game.mySeat;
     const mustRoll = game.phase === "MUST_ROLL";
 
-    if (isMyTurn && mustRoll && !rollPending && !bustAnimation) {
+    if (isMyTurn && mustRoll) {
       if (game.turnScore === 0 && game.remainingDiceCount === 6 && !autoRolledRef.current) {
         autoRolledRef.current = true;
 
-        // If bust animation just ended, wait extra so the transition feels natural
-        const sinceBustEnd = Date.now() - bustEndTimeRef.current;
-        const delay = sinceBustEnd < AUTO_ROLL_DELAY ? AUTO_ROLL_DELAY - sinceBustEnd : AUTO_ROLL_DELAY;
+        // Use longer delay right after a bust animation so transition feels natural
+        const delay = wasBustRef.current ? POST_BUST_DELAY : NORMAL_DELAY;
+        wasBustRef.current = false;
 
         const timer = setTimeout(() => {
           rollMutateRef.current();
         }, delay);
-        return () => {
-          clearTimeout(timer);
-        };
+        return () => clearTimeout(timer);
       }
     }
   }, [game, gameOver, bustAnimation, rollPending]);

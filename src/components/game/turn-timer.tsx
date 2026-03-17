@@ -62,31 +62,32 @@ export function TurnTimer({
 
   // Relay sync: only on turn (activeSeat) change for cross-device sync
   useEffect(() => {
+    let cancelled = false;
     const now = startRef.current || Date.now();
 
-    // Publish this turn's start time
+    // Publish this turn's start time, THEN fetch to see if other player published earlier
     fetch("/api/turn-start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gameId, activeSeat, startedAt: now }),
-    }).catch(() => {});
-
-    // Fetch in case the other player published first
-    fetch(`/api/turn-start?gameId=${gameId}`)
+    })
+      .then(() => fetch(`/api/turn-start?gameId=${gameId}`))
       .then((res) => res.json())
       .then(
         (data: { activeSeat: number | null; startedAt: number | null }) => {
           if (
+            !cancelled &&
             data.startedAt != null &&
             data.activeSeat === activeSeat &&
             data.startedAt < startRef.current
           ) {
-            // Use the earlier start time (the first player to detect the turn change)
             startRef.current = data.startedAt;
           }
         }
       )
       .catch(() => {});
+
+    return () => { cancelled = true; };
   }, [gameId, activeSeat]);
 
   // Tick every 100ms for smooth animation
