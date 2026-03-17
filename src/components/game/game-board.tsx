@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getGameState, rollDice, keepDice, bankScore, forfeitGame, pingGame, ApiError } from "@/lib/api";
+import { getGameState, rollDice, keepDice, bankScore, forfeitGame, ApiError } from "@/lib/api";
 import { connectToGame, type GameConnection } from "@/lib/websocket";
 import { queryKeys } from "@/lib/query-keys";
 import { useGameUIStore } from "@/stores/game-ui-store";
-import type { GameEvent } from "@/types/api";
+import type { GameEvent, RolledDieDto } from "@/types/api";
 import { ScorePanel } from "./score-panel";
 import { TurnInfo } from "./turn-info";
 import { DiceArea } from "./dice-area";
@@ -15,39 +15,19 @@ import { GameOverDialog } from "./game-over-dialog";
 import { addActiveGame, removeActiveGame } from "@/lib/active-games";
 import { getScoringSlots } from "@/lib/scoring";
 import { toast } from "sonner";
+import { useGameAnimations } from "@/hooks/use-game-animations";
+import { useSelectionRelay } from "@/hooks/use-selection-relay";
+import { usePresencePing } from "@/hooks/use-presence-ping";
+import { useAutoRoll } from "@/hooks/use-auto-roll";
+import { useBustDetection, fetchBustDice } from "@/hooks/use-bust-detection";
 
 interface GameBoardProps {
   gameId: number;
 }
 
-// ── Selection relay via Next.js API route (works without WebSocket) ──
+// ── Bust dice relay (POST only — fetch is in useBustDetection) ──
 
-async function postSelections(gameId: number, seat: number, slots: number[]) {
-  try {
-    await fetch("/api/selections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gameId, seat, slots }),
-    });
-  } catch {
-    // silent — best-effort
-  }
-}
-
-async function fetchOpponentSelections(gameId: number, mySeat: number): Promise<number[]> {
-  try {
-    const res = await fetch(`/api/selections?gameId=${gameId}&mySeat=${mySeat}`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.slots ?? [];
-  } catch {
-    return [];
-  }
-}
-
-// ── Bust dice relay ──
-
-async function postBustDice(gameId: number, dice: import("@/types/api").RolledDieDto[]) {
+async function postBustDice(gameId: number, dice: RolledDieDto[]) {
   try {
     await fetch("/api/bust-relay", {
       method: "POST",
@@ -59,129 +39,66 @@ async function postBustDice(gameId: number, dice: import("@/types/api").RolledDi
   }
 }
 
-async function fetchBustDice(gameId: number): Promise<import("@/types/api").RolledDieDto[] | null> {
-  try {
-    const res = await fetch(`/api/bust-relay?gameId=${gameId}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.dice ?? null;
-  } catch {
-    return null;
-  }
-}
-
 export function GameBoard({ gameId }: GameBoardProps) {
   const queryClient = useQueryClient();
-  const selectedSlots = useGameUIStore((s) => s.selectedSlots);
   const clearSelection = useGameUIStore((s) => s.clearSelection);
+
+  // ── Game-over state ──
   const [gameOver, setGameOver] = useState(false);
   const [winnerSeat, setWinnerSeat] = useState<number | undefined>();
   const [forfeit, setForfeit] = useState(false);
   const [forfeitReason, setForfeitReason] = useState<import("@/types/api").ForfeitReason | undefined>();
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
+
+  // ── WebSocket ──
   const [wsConnected, setWsConnected] = useState(false);
   const [rollTrigger, setRollTrigger] = useState(0);
-  const [bustAnimation, setBustAnimation] = useState(false);
-  const [bustOverlay, setBustOverlay] = useState<string | null>(null); // "You busted!" or "Opponent busted!"
-  const [bankAnimation, setBankAnimation] = useState<number | null>(null);
-  const [bustDice, setBustDice] = useState<import("@/types/api").RolledDieDto[] | null>(null);
-  const [opponentSlots, setOpponentSlots] = useState<number[]>([]);
-  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
-  const mySeatRef = useRef<number | undefined>(undefined);
   const connectionRef = useRef<GameConnection | null>(null);
-  const prevGameRef = useRef<{ activeSeat: number; turnScore: number; totalScores: [number, number] } | null>(null);
 
+  // ── Animations ──
+  const { bustAnimation, bustOverlay, bankAnimation, bustDice, setBustDice, triggerBust, triggerBank } =
+    useGameAnimations();
+
+  // ── Game query ──
   const { data: game, isLoading, error } = useQuery({
     queryKey: queryKeys.gameState(gameId),
     queryFn: () => getGameState(gameId),
     refetchInterval: (wsConnected || bustAnimation) ? false : 1000,
   });
 
-  useEffect(() => {
-    if (game) mySeatRef.current = game.mySeat;
-  }, [game]);
+  // ── Relay hooks ──
+  const { opponentSlots, clearOpponentSlots, mySeatRef } = useSelectionRelay({
+    gameId,
+    game,
+    gameOver,
+    connectionRef,
+  });
 
-  // Publish own selections via both WS and HTTP relay
-  useEffect(() => {
-    connectionRef.current?.publishSelections(selectedSlots);
-    const seat = mySeatRef.current;
-    if (seat != null) {
-      postSelections(gameId, seat, selectedSlots);
-    }
-  }, [selectedSlots, gameId]);
+  usePresencePing(gameId, gameOver);
 
-  // Heartbeat: re-post selections every 5s so they don't expire in the relay
-  useEffect(() => {
-    if (gameOver) return;
-    const interval = setInterval(() => {
-      const seat = mySeatRef.current;
-      if (seat != null) {
-        postSelections(gameId, seat, useGameUIStore.getState().selectedSlots);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [gameId, gameOver]);
+  useBustDetection({
+    gameId,
+    game,
+    bustAnimation,
+    wsConnected,
+    triggerBust,
+    setBustDice,
+  });
 
-  // Presence ping: notify backend every 10s that this player is still active
-  useEffect(() => {
-    if (gameOver) return;
-    const interval = setInterval(() => {
-      pingGame(gameId).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [gameId, gameOver]);
-
-  // Poll opponent selections via HTTP relay (500ms interval)
-  useEffect(() => {
-    if (!game || gameOver) return;
-    const mySeat = game.mySeat;
-    const isMyTurn = game.activeSeat === mySeat;
-
-    if (isMyTurn) return;
-
-    const interval = setInterval(async () => {
-      const slots = await fetchOpponentSelections(gameId, mySeat);
-      setOpponentSlots(slots);
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [gameId, game, gameOver]);
-
-  const handleWsConnectionChange = useCallback((connected: boolean) => {
-    setWsConnected(connected);
-  }, []);
-
-  const triggerBust = useCallback((message: string, dice: import("@/types/api").RolledDieDto[] | null) => {
-    setBustAnimation(true);
-    setBustOverlay(message);
-    if (dice) setBustDice(dice);
-    // Keep bust visible for 2.5s so players can see the rolled dice
-    setTimeout(() => {
-      setBustAnimation(false);
-      setBustOverlay(null);
-      setBustDice(null);
-    }, 2500);
-  }, []);
-
-  const triggerBank = useCallback((amount: number) => {
-    setBankAnimation(amount);
-    setTimeout(() => setBankAnimation(null), 2000);
-  }, []);
+  // ── WebSocket event handler ──
 
   const handleEvent = useCallback(
     (event: GameEvent) => {
       const mySeat = mySeatRef.current;
 
-      // For BUST events, delay the state refresh so players can see the bust dice
       if (event.type === "BUST") {
         const msg = event.bySeat === mySeat ? "You busted!" : "Opponent busted!";
         const bustRolled = event.payload.rolled ?? null;
-        setRollTrigger((prev) => prev + 1); // show the bust roll animation
+        setRollTrigger((prev) => prev + 1);
         triggerBust(msg, bustRolled);
         clearSelection();
-        setOpponentSlots([]);
-        // Relay bust dice for polling-only devices
+        clearOpponentSlots();
         if (bustRolled) postBustDice(gameId, bustRolled);
-        // Delay game state refresh so bust dice stay visible
         setTimeout(() => {
           queryClient.invalidateQueries({ queryKey: queryKeys.gameState(gameId) });
         }, 2500);
@@ -193,27 +110,25 @@ export function GameBoard({ gameId }: GameBoardProps) {
       switch (event.type) {
         case "ROLLED":
           setRollTrigger((prev) => prev + 1);
-          setOpponentSlots([]);
+          clearOpponentSlots();
           break;
-        case "BANKED": {
+        case "BANKED":
           if (event.bySeat === mySeat) {
             triggerBank(event.payload.banked);
           } else {
             toast.info("Opponent banked their score.");
           }
           clearSelection();
-          setOpponentSlots([]);
+          clearOpponentSlots();
           break;
-        }
         case "TURN_CHANGED":
           clearSelection();
-          setOpponentSlots([]);
+          clearOpponentSlots();
           break;
-        case "FINISHED": {
+        case "FINISHED":
           setWinnerSeat(event.payload.winnerSeat);
           setGameOver(true);
           break;
-        }
         case "FORFEIT": {
           const { winnerSeat: ws, loserSeat: ls, reason } = event.payload;
           if (ws != null) {
@@ -228,26 +143,22 @@ export function GameBoard({ gameId }: GameBoardProps) {
           break;
         }
         case "PLAYER_DISCONNECTED":
-          if (event.bySeat !== mySeat) {
-            setOpponentDisconnected(true);
-          }
+          if (event.bySeat !== mySeat) setOpponentDisconnected(true);
           break;
         case "PLAYER_RECONNECTED":
-          if (event.bySeat !== mySeat) {
-            setOpponentDisconnected(false);
-          }
+          if (event.bySeat !== mySeat) setOpponentDisconnected(false);
           break;
       }
     },
-    [gameId, queryClient, clearSelection, triggerBust, triggerBank]
+    [gameId, queryClient, clearSelection, clearOpponentSlots, triggerBust, triggerBank, mySeatRef]
   );
 
+  const handleWsConnectionChange = useCallback((connected: boolean) => {
+    setWsConnected(connected);
+  }, []);
+
   useEffect(() => {
-    const conn = connectToGame(
-      gameId,
-      handleEvent,
-      handleWsConnectionChange
-    );
+    const conn = connectToGame(gameId, handleEvent, handleWsConnectionChange);
     connectionRef.current = conn;
     return () => {
       conn.disconnect();
@@ -255,7 +166,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
     };
   }, [gameId, handleEvent, handleWsConnectionChange]);
 
-  // Track active game in localStorage
+  // ── Track active game ──
   useEffect(() => {
     if (!game) return;
     if (game.status === "IN_PROGRESS") {
@@ -265,57 +176,19 @@ export function GameBoard({ gameId }: GameBoardProps) {
     }
   }, [game, gameId]);
 
-  // Detect game finished from polling (when WS event was missed)
+  // ── Detect game finished from polling ──
   if (game && game.status === "FINISHED" && !gameOver) {
-    // Use winnerSeat from game state if backend provides it
-    if (game.winnerSeat != null) {
-      setWinnerSeat(game.winnerSeat);
-    }
-    // Detect forfeit: if neither player reached targetScore, it was a forfeit
+    if (game.winnerSeat != null) setWinnerSeat(game.winnerSeat);
     const noOneReachedTarget = game.totalScores[0] < game.targetScore && game.totalScores[1] < game.targetScore;
     if (noOneReachedTarget || game.forfeitReason) {
       setForfeit(true);
-      if (game.forfeitReason) {
-        setForfeitReason(game.forfeitReason);
-      }
-      // If no winnerSeat from backend or WS, the player still viewing the game
-      // is the winner (the loser was deactivated/disconnected/timed out)
-      if (game.winnerSeat == null) {
-        setWinnerSeat(game.mySeat);
-      }
+      if (game.forfeitReason) setForfeitReason(game.forfeitReason);
+      if (game.winnerSeat == null) setWinnerSeat(game.mySeat);
     }
     setGameOver(true);
   }
 
-  // Polling-based bust detection: detect opponent bust when WS is unavailable
-  useEffect(() => {
-    if (!game || bustAnimation) return;
-    const prev = prevGameRef.current;
-    prevGameRef.current = {
-      activeSeat: game.activeSeat,
-      turnScore: game.turnScore,
-      totalScores: [...game.totalScores] as [number, number],
-    };
-
-    if (!prev) return;
-    if (!wsConnected) {
-      // Opponent bust: turn was opponent's, now it's mine
-      const wasOpponentTurn = prev.activeSeat !== game.mySeat;
-      const nowMyTurn = game.activeSeat === game.mySeat;
-      if (wasOpponentTurn && nowMyTurn) {
-        // Distinguish bust from bank: if opponent's total score didn't increase, it's a bust
-        const opponentSeat = game.mySeat === 0 ? 1 : 0;
-        const scoreSame = game.totalScores[opponentSeat] === prev.totalScores[opponentSeat];
-        if (scoreSame) {
-          // Fetch bust dice from relay (posted by WS-connected device)
-          fetchBustDice(gameId).then((dice) => {
-            triggerBust("Opponent busted!", dice);
-            if (dice) setBustDice(dice);
-          });
-        }
-      }
-    }
-  }, [game, bustAnimation, wsConnected, triggerBust, gameId]);
+  // ── Mutations ──
 
   const rollMutation = useMutation({
     mutationFn: () => rollDice(gameId),
@@ -323,16 +196,13 @@ export function GameBoard({ gameId }: GameBoardProps) {
       setRollTrigger((prev) => prev + 1);
       clearSelection();
 
-      // Detect self-bust: I rolled but turn moved to opponent (polling-only fallback)
       const wasMySeat = game?.activeSeat === game?.mySeat;
       const nowOpponentTurn = data.activeSeat !== data.mySeat;
       if (wasMySeat && nowOpponentTurn && !wsConnected) {
-        // I busted — show bust animation, try to get dice from response or relay
         if (data.lastRoll && data.lastRoll.length > 0) {
           triggerBust("You busted!", data.lastRoll);
           setBustDice(data.lastRoll);
         } else {
-          // Response has no dice — try relay (opponent's WS device may have posted them)
           fetchBustDice(gameId).then((dice) => {
             triggerBust("You busted!", dice);
             if (dice) setBustDice(dice);
@@ -392,13 +262,16 @@ export function GameBoard({ gameId }: GameBoardProps) {
     },
   });
 
-  // Turn timeout: auto-keep+bank if dice on table, auto-bank if ready
+  // ── Turn timeout ──
   const handleTurnTimeout = useCallback(() => {
     if (!game || gameOver) return;
     const isMyTurn = game.activeSeat === game.mySeat;
     if (!isMyTurn) return;
 
-    if (game.phase === "CAN_ROLL_OR_BANK" && !bankMutation.isPending) {
+    if (game.phase === "MUST_ROLL" && !rollMutation.isPending) {
+      // Timeout on MUST_ROLL: roll automatically, then bank after keeping
+      rollMutation.mutate();
+    } else if (game.phase === "CAN_ROLL_OR_BANK" && !bankMutation.isPending) {
       bankMutation.mutate();
     } else if (game.phase === "MUST_KEEP_OR_BUST" && game.lastRoll && !keepMutation.isPending) {
       const scoringSlots = getScoringSlots(game.lastRoll);
@@ -410,41 +283,16 @@ export function GameBoard({ gameId }: GameBoardProps) {
         });
       }
     }
-  }, [game, gameOver, bankMutation, keepMutation]);
+  }, [game, gameOver, rollMutation, bankMutation, keepMutation]);
 
-  // Auto-roll: when it becomes my turn and phase is MUST_ROLL, roll automatically
-  const autoRolledRef = useRef(false);
-  const rollMutateRef = useRef(rollMutation.mutate);
-  useEffect(() => {
-    rollMutateRef.current = rollMutation.mutate;
+  // ── Auto-roll ──
+  useAutoRoll({
+    game,
+    gameOver,
+    bustAnimation,
+    rollPending: rollMutation.isPending,
+    rollMutate: rollMutation.mutate,
   });
-  const rollPending = rollMutation.isPending;
-
-  // Reset auto-roll guard on turn change so it's never stuck
-  const activeSeatForAutoRoll = game?.activeSeat;
-  useEffect(() => {
-    autoRolledRef.current = false;
-  }, [activeSeatForAutoRoll]);
-
-  useEffect(() => {
-    if (!game || gameOver) return;
-    const isMyTurn = game.activeSeat === game.mySeat;
-    const mustRoll = game.phase === "MUST_ROLL";
-
-    if (isMyTurn && mustRoll && !rollPending && !bustAnimation) {
-      // Only auto-roll at the START of my turn (not after I just kept dice)
-      // Detect fresh turn: turnScore is 0 and all 6 dice are available
-      if (game.turnScore === 0 && game.remainingDiceCount === 6 && !autoRolledRef.current) {
-        autoRolledRef.current = true;
-        const timer = setTimeout(() => {
-          rollMutateRef.current();
-        }, 600);
-        return () => {
-          clearTimeout(timer);
-        };
-      }
-    }
-  }, [game, gameOver, bustAnimation, rollPending]);
 
   // ── Loading / Error states ──
 
@@ -507,7 +355,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
         </div>
       )}
 
-      {/* Dice table + actions — centered, fills available space */}
+      {/* Dice table + actions */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 max-w-3xl mx-auto w-full">
         <div className="mb-2">
           <TurnInfo game={game} gameOver={gameOver} onTimeout={handleTurnTimeout} />
