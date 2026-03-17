@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 import { AuthGuard } from "@/components/auth-guard";
 import { GameBoard } from "@/components/game/game-board";
 
@@ -11,6 +11,17 @@ export default function GamePage({
 }) {
   const { gameId } = use(params);
   const id = Number(gameId);
+
+  // Replace history so browser back goes to lobby, not waiting room
+  useEffect(() => {
+    window.history.replaceState(null, "", window.location.href);
+    window.history.pushState(null, "", window.location.href);
+    const handlePopState = () => {
+      window.location.href = "/lobby";
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   if (isNaN(id)) {
     return (
