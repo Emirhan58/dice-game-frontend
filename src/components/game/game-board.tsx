@@ -13,6 +13,7 @@ import { DiceArea } from "./dice-area";
 import { ActionBar } from "./action-bar";
 import { GameOverDialog } from "./game-over-dialog";
 import { addActiveGame, removeActiveGame } from "@/lib/active-games";
+import { getScoringSlots } from "@/lib/scoring";
 import { toast } from "sonner";
 
 interface GameBoardProps {
@@ -395,7 +396,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
     },
   });
 
-  // Turn timeout: auto-bank if in CAN_ROLL_OR_BANK phase, otherwise forfeit
+  // Turn timeout: auto-keep+bank if dice on table, auto-bank if ready
   const handleTurnTimeout = useCallback(() => {
     if (!game || gameOver) return;
     const isMyTurn = game.activeSeat === game.mySeat;
@@ -403,11 +404,17 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
     if (game.phase === "CAN_ROLL_OR_BANK" && !bankMutation.isPending) {
       bankMutation.mutate();
-    } else if (!forfeitMutation.isPending) {
-      pendingForfeitReason.current = "TIMEOUT";
-      forfeitMutation.mutate();
+    } else if (game.phase === "MUST_KEEP_OR_BUST" && game.lastRoll && !keepMutation.isPending) {
+      const scoringSlots = getScoringSlots(game.lastRoll);
+      if (scoringSlots.size > 0) {
+        keepMutation.mutate([...scoringSlots], {
+          onSuccess: () => {
+            bankMutation.mutate();
+          },
+        });
+      }
     }
-  }, [game, gameOver, forfeitMutation, bankMutation]);
+  }, [game, gameOver, bankMutation, keepMutation]);
 
   // Auto-roll: when it becomes my turn and phase is MUST_ROLL, roll automatically
   const autoRolledRef = useRef(false);
