@@ -62,21 +62,21 @@ export function MyTables({ myWaitingTables }: MyTablesProps) {
   const [isSearching, setIsSearching] = useState(false);
   const prevWaitingIdsRef = useRef<Set<number>>(new Set());
   const searchingTableRef = useRef<number | null>(null);
-  const mountedRef = useRef(false);
 
-  // Fetch active games on mount
+  // Fetch active games on mount and when window regains focus
   useEffect(() => {
-    if (mountedRef.current) return;
-    mountedRef.current = true;
-
     let cancelled = false;
-    loadActiveGames().then((results) => {
-      if (!cancelled) {
-        setGames(results);
-        setLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
+    const load = () => {
+      loadActiveGames().then((results) => {
+        if (!cancelled) {
+          setGames(results);
+          setLoading(false);
+        }
+      });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => { cancelled = true; window.removeEventListener("focus", load); };
   }, []);
 
   const refreshGames = useCallback(() => {
