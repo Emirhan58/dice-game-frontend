@@ -111,6 +111,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
   // Heartbeat: re-post selections every 5s so they don't expire in the relay
   useEffect(() => {
+    if (gameOver) return;
     const interval = setInterval(() => {
       const seat = mySeatRef.current;
       if (seat != null) {
@@ -118,7 +119,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [gameId]);
+  }, [gameId, gameOver]);
 
   // Presence ping: notify backend every 10s that this player is still active
   useEffect(() => {
@@ -173,8 +174,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
       // For BUST events, delay the state refresh so players can see the bust dice
       if (event.type === "BUST") {
         const msg = event.bySeat === mySeat ? "You busted!" : "Opponent busted!";
-        const bustPayload = event.payload as { rolled?: import("@/types/api").RolledDieDto[] } | undefined;
-        const bustRolled = bustPayload?.rolled ?? null;
+        const bustRolled = event.payload.rolled ?? null;
         setRollTrigger((prev) => prev + 1); // show the bust roll animation
         triggerBust(msg, bustRolled);
         clearSelection();
@@ -196,9 +196,8 @@ export function GameBoard({ gameId }: GameBoardProps) {
           setOpponentSlots([]);
           break;
         case "BANKED": {
-          const bp = event.payload as { banked: number } | undefined;
           if (event.bySeat === mySeat) {
-            triggerBank(bp?.banked ?? 0);
+            triggerBank(event.payload.banked);
           } else {
             toast.info("Opponent banked their score.");
           }
@@ -211,19 +210,18 @@ export function GameBoard({ gameId }: GameBoardProps) {
           setOpponentSlots([]);
           break;
         case "FINISHED": {
-          const payload = event.payload as { winnerSeat: number } | undefined;
-          setWinnerSeat(payload?.winnerSeat);
+          setWinnerSeat(event.payload.winnerSeat);
           setGameOver(true);
           break;
         }
         case "FORFEIT": {
-          const payload = event.payload as { winnerSeat?: number; loserSeat?: number; reason?: string } | undefined;
-          if (payload?.winnerSeat != null) {
-            setWinnerSeat(payload.winnerSeat);
-          } else if (payload?.loserSeat != null && mySeat != null) {
-            setWinnerSeat(payload.loserSeat === 0 ? 1 : 0);
+          const { winnerSeat: ws, loserSeat: ls, reason } = event.payload;
+          if (ws != null) {
+            setWinnerSeat(ws);
+          } else if (ls != null && mySeat != null) {
+            setWinnerSeat(ls === 0 ? 1 : 0);
           }
-          setForfeitReason(payload?.reason as import("@/types/api").ForfeitReason | undefined);
+          setForfeitReason(reason);
           setForfeit(true);
           setGameOver(true);
           setOpponentDisconnected(false);
@@ -377,15 +375,13 @@ export function GameBoard({ gameId }: GameBoardProps) {
 
   const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
 
-  const pendingForfeitReason = useRef<import("@/types/api").ForfeitReason>("VOLUNTARY");
-
   const forfeitMutation = useMutation({
     mutationFn: () => forfeitGame(gameId),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.gameState(gameId), data);
       removeActiveGame(gameId);
       setWinnerSeat(data.mySeat === 0 ? 1 : 0);
-      setForfeitReason(pendingForfeitReason.current);
+      setForfeitReason("VOLUNTARY");
       setForfeit(true);
       setGameOver(true);
       setShowForfeitConfirm(false);
@@ -424,6 +420,12 @@ export function GameBoard({ gameId }: GameBoardProps) {
   });
   const rollPending = rollMutation.isPending;
 
+  // Reset auto-roll guard on turn change so it's never stuck
+  const activeSeatForAutoRoll = game?.activeSeat;
+  useEffect(() => {
+    autoRolledRef.current = false;
+  }, [activeSeatForAutoRoll]);
+
   useEffect(() => {
     if (!game || gameOver) return;
     const isMyTurn = game.activeSeat === game.mySeat;
@@ -441,8 +443,6 @@ export function GameBoard({ gameId }: GameBoardProps) {
           clearTimeout(timer);
         };
       }
-    } else {
-      autoRolledRef.current = false;
     }
   }, [game, gameOver, bustAnimation, rollPending]);
 
@@ -557,7 +557,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 border border-red-900/40">
             <span className="text-xs text-red-300/80 font-mono">Forfeit?</span>
             <button
-              onClick={() => { pendingForfeitReason.current = "VOLUNTARY"; forfeitMutation.mutate(); }}
+              onClick={() => forfeitMutation.mutate()}
               disabled={forfeitMutation.isPending}
               className="text-xs px-3 py-1 rounded bg-red-900/60 border border-red-700/40 text-red-200 font-bold hover:bg-red-800/60 transition-all disabled:opacity-50"
             >

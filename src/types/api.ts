@@ -129,13 +129,7 @@ export type GameEventType =
   | "PLAYER_DISCONNECTED"
   | "PLAYER_RECONNECTED";
 
-export interface GameEvent {
-  type: GameEventType;
-  gameId: number;
-  tableId: number;
-  bySeat: number | null;
-  payload?: Record<string, unknown>;
-}
+// ── Payload types ──
 
 export interface RolledPayload {
   roll: RolledDieDto[];
@@ -168,6 +162,25 @@ export interface ForfeitPayload {
   loserSeat: number;
   reason: ForfeitReason;
 }
+
+// ── Discriminated union for type-safe event handling ──
+
+interface GameEventBase {
+  gameId: number;
+  tableId: number;
+  bySeat: number | null;
+}
+
+export type GameEvent =
+  | (GameEventBase & { type: "ROLLED"; payload: RolledPayload })
+  | (GameEventBase & { type: "KEPT"; payload: KeptPayload })
+  | (GameEventBase & { type: "BANKED"; payload: BankedPayload })
+  | (GameEventBase & { type: "BUST"; payload: BustPayload })
+  | (GameEventBase & { type: "FINISHED"; payload: FinishedPayload })
+  | (GameEventBase & { type: "TURN_CHANGED"; payload?: undefined })
+  | (GameEventBase & { type: "FORFEIT"; payload: ForfeitPayload })
+  | (GameEventBase & { type: "PLAYER_DISCONNECTED"; payload?: undefined })
+  | (GameEventBase & { type: "PLAYER_RECONNECTED"; payload?: undefined });
 
 // ============================================================
 // Admin

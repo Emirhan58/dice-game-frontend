@@ -74,7 +74,7 @@ export function Die3D({ slot, value, state, position, onClick, rollTrigger }: Di
     return new THREE.Euler(rx, ry, rz);
   }, [value]);
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     if (!meshRef.current) return;
 
     // Detect new roll trigger inside useFrame (refs are safe here)
@@ -124,11 +124,12 @@ export function Die3D({ slot, value, state, position, onClick, rollTrigger }: Di
 
     // Selected dice float up slightly and pulse
     const baseY = position[1] + bounceY.current;
+    const elapsed = clock.getElapsedTime();
     if (state === "selected") {
-      meshRef.current.position.y = baseY + Math.sin(Date.now() * 0.005) * 0.08 + 0.3;
+      meshRef.current.position.y = baseY + Math.sin(elapsed * 5) * 0.08 + 0.3;
     } else if (state === "opponent-selected") {
       // Subtle hover for opponent's consideration
-      meshRef.current.position.y = baseY + Math.sin(Date.now() * 0.003) * 0.05 + 0.15;
+      meshRef.current.position.y = baseY + Math.sin(elapsed * 3) * 0.05 + 0.15;
     } else {
       meshRef.current.position.y = baseY;
     }
