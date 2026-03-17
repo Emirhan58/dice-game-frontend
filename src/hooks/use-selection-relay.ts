@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useGameUIStore } from "@/stores/game-ui-store";
 import type { GameStateResponse } from "@/types/api";
-import type { GameConnection } from "@/lib/websocket";
-
 // ── Relay helpers ──
 
 async function postSelections(gameId: number, seat: number, slots: number[]) {
@@ -34,10 +32,9 @@ interface UseSelectionRelayOptions {
   gameId: number;
   game: GameStateResponse | undefined;
   gameOver: boolean;
-  connectionRef: React.RefObject<GameConnection | null>;
 }
 
-export function useSelectionRelay({ gameId, game, gameOver, connectionRef }: UseSelectionRelayOptions) {
+export function useSelectionRelay({ gameId, game, gameOver }: UseSelectionRelayOptions) {
   const selectedSlots = useGameUIStore((s) => s.selectedSlots);
   const [opponentSlots, setOpponentSlots] = useState<number[]>([]);
   const mySeatRef = useRef<number | undefined>(undefined);
@@ -46,14 +43,13 @@ export function useSelectionRelay({ gameId, game, gameOver, connectionRef }: Use
     if (game) mySeatRef.current = game.mySeat;
   }, [game]);
 
-  // Publish own selections via both WS and HTTP relay
+  // Publish own selections via HTTP relay
   useEffect(() => {
-    connectionRef.current?.publishSelections(selectedSlots);
     const seat = mySeatRef.current;
     if (seat != null) {
       postSelections(gameId, seat, selectedSlots);
     }
-  }, [selectedSlots, gameId, connectionRef]);
+  }, [selectedSlots, gameId]);
 
   // Heartbeat: re-post selections every 5s so they don't expire in the relay
   useEffect(() => {

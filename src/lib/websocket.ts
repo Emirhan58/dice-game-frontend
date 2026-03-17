@@ -5,7 +5,6 @@ let stompClient: Client | null = null;
 
 export interface GameConnection {
   disconnect: () => void;
-  publishSelections: (slots: number[]) => void;
 }
 
 export function connectToGame(
@@ -61,17 +60,12 @@ export function connectToGame(
   client.activate();
   stompClient = client;
 
-  // Selection publishing is handled entirely via HTTP relay (postSelections).
-  // SEND to /topic/ causes a fatal STOMP ERROR that kills the connection.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const publishSelections = (_slots: number[]) => {};
-
   const disconnect = () => {
     client.deactivate();
     stompClient = null;
   };
 
-  return { disconnect, publishSelections };
+  return { disconnect };
 }
 
 export function getStompClient(): Client | null {

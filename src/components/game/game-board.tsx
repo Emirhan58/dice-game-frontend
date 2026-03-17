@@ -55,6 +55,11 @@ export function GameBoard({ gameId }: GameBoardProps) {
   const [rollTrigger, setRollTrigger] = useState(0);
   const connectionRef = useRef<GameConnection | null>(null);
 
+  // Clear stale selections when switching games
+  useEffect(() => {
+    clearSelection();
+  }, [gameId, clearSelection]);
+
   // ── Animations ──
   const { bustAnimation, bustOverlay, bankAnimation, bustDice, setBustDice, triggerBust, triggerBank } =
     useGameAnimations();
@@ -71,7 +76,6 @@ export function GameBoard({ gameId }: GameBoardProps) {
     gameId,
     game,
     gameOver,
-    connectionRef,
   });
 
   usePresencePing(gameId, gameOver);

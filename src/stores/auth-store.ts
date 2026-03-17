@@ -4,7 +4,8 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
   try {
     const payload = token.split(".")[1];
     return JSON.parse(atob(payload));
-  } catch {
+  } catch (err) {
+    console.warn("[Auth] Failed to decode JWT payload:", err);
     return {};
   }
 }
@@ -45,22 +46,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAccessToken: (token: string) => {
     localStorage.setItem("accessToken", token);
     const { userId, username, role } = extractUserInfo(token);
-    if (username) {
-      localStorage.setItem("username", username);
-    }
-    if (userId !== null) {
-      localStorage.setItem("userId", String(userId));
-    }
-    if (role) {
-      localStorage.setItem("role", role);
-    }
-    set({
+    if (username) localStorage.setItem("username", username);
+    if (userId !== null) localStorage.setItem("userId", String(userId));
+    if (role) localStorage.setItem("role", role);
+    set((prev) => ({
       accessToken: token,
       isAuthenticated: true,
-      userId: userId ?? (Number(localStorage.getItem("userId")) || null),
-      username: username ?? localStorage.getItem("username"),
-      role: role ?? localStorage.getItem("role"),
-    });
+      userId: userId ?? prev.userId,
+      username: username ?? prev.username,
+      role: role ?? prev.role,
+    }));
   },
   setUserId: (id: number) => {
     localStorage.setItem("userId", String(id));
@@ -81,8 +76,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         accessToken: token,
         isAuthenticated: true,
         userId: userId ?? (Number(localStorage.getItem("userId")) || null),
-        username: username ?? localStorage.getItem("username"),
-        role: role ?? localStorage.getItem("role"),
+        username: username ?? (localStorage.getItem("username") || null),
+        role: role ?? (localStorage.getItem("role") || null),
       });
     }
   },
