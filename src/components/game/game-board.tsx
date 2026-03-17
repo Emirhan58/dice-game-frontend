@@ -84,6 +84,7 @@ export function GameBoard({ gameId }: GameBoardProps) {
   const [bankAnimation, setBankAnimation] = useState<number | null>(null);
   const [bustDice, setBustDice] = useState<import("@/types/api").RolledDieDto[] | null>(null);
   const [opponentSlots, setOpponentSlots] = useState<number[]>([]);
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const mySeatRef = useRef<number | undefined>(undefined);
   const connectionRef = useRef<GameConnection | null>(null);
   const prevGameRef = useRef<{ activeSeat: number; turnScore: number; totalScores: [number, number] } | null>(null);
@@ -216,18 +217,27 @@ export function GameBoard({ gameId }: GameBoardProps) {
         }
         case "FORFEIT": {
           const payload = event.payload as { winnerSeat?: number; loserSeat?: number; reason?: string } | undefined;
-          console.log("[FORFEIT] payload:", payload, "mySeat:", mySeat);
           if (payload?.winnerSeat != null) {
             setWinnerSeat(payload.winnerSeat);
           } else if (payload?.loserSeat != null && mySeat != null) {
-            // fallback: derive winner from loserSeat
             setWinnerSeat(payload.loserSeat === 0 ? 1 : 0);
           }
           setForfeitReason(payload?.reason as import("@/types/api").ForfeitReason | undefined);
           setForfeit(true);
           setGameOver(true);
+          setOpponentDisconnected(false);
           break;
         }
+        case "PLAYER_DISCONNECTED":
+          if (event.bySeat !== mySeat) {
+            setOpponentDisconnected(true);
+          }
+          break;
+        case "PLAYER_RECONNECTED":
+          if (event.bySeat !== mySeat) {
+            setOpponentDisconnected(false);
+          }
+          break;
       }
     },
     [gameId, queryClient, clearSelection, triggerBust, triggerBank]
@@ -476,6 +486,13 @@ export function GameBoard({ gameId }: GameBoardProps) {
               {bustOverlay}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Opponent disconnected banner */}
+      {opponentDisconnected && (
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg bg-red-900/80 border border-red-700/50 text-red-200 text-sm font-mono animate-pulse">
+          Opponent disconnected — waiting 30s...
         </div>
       )}
 

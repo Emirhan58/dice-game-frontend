@@ -125,7 +125,9 @@ export type GameEventType =
   | "BUST"
   | "FINISHED"
   | "TURN_CHANGED"
-  | "FORFEIT";
+  | "FORFEIT"
+  | "PLAYER_DISCONNECTED"
+  | "PLAYER_RECONNECTED";
 
 export interface GameEvent {
   type: GameEventType;
